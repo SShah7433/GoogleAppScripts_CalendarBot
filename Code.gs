@@ -351,6 +351,7 @@ function applyColorRules_(calendarId, event, colorConfig) {
       const colorId = calendarColorId_(rule.colorId);
       if (colorId && event.colorId !== colorId) {
         Calendar.Events.patch({ colorId: colorId }, calendarId, event.id);
+        logEventChange_('modified', calendarId, event.id, { reason: 'color_rule', colorId: colorId, ...eventLogDetails_(event) });
         log_('color_rule_applied', { calendarId: calendarId, colorId: colorId, matchField: rule.matchField, matchType: rule.matchType, ...eventLogDetails_(event) });
       }
       return;
@@ -368,6 +369,7 @@ function applyExternalColor_(calendarId, event, config) {
   const colorId = calendarColorId_(config.colorId);
   if (externalAttendee && colorId && event.colorId !== colorId) {
     Calendar.Events.patch({ colorId: colorId }, calendarId, event.id);
+    logEventChange_('modified', calendarId, event.id, { reason: 'external_attendee_color', colorId: colorId, ...eventLogDetails_(event) });
     log_('external_attendee_color_applied', { calendarId: calendarId, colorId: colorId, ...eventLogDetails_(event) });
     return true;
   }
@@ -388,6 +390,7 @@ function upsertBotEvent_(calendarId, source, feature, body, cache) {
     try {
       Calendar.Events.patch(body, calendarId, existing.id);
       rememberBotEvent_(calendarId, key, existing.id);
+      logEventChange_('modified', calendarId, existing.id, { reason: feature, sourceEventId: source.id, ...eventLogDetails_(source) });
       log_('bot_event_updated', { calendarId: calendarId, botEventId: existing.id, feature: feature, ...eventLogDetails_(source) });
       return;
     } catch (error) {
@@ -399,6 +402,7 @@ function upsertBotEvent_(calendarId, source, feature, body, cache) {
   // Extended-property filtering can lag behind event writes. Retain the ID long
   // enough for the write-triggered reconciliation pass to retrieve it directly.
   rememberBotEvent_(calendarId, key, created.id);
+  logEventChange_('added', calendarId, created.id, { reason: feature, sourceEventId: source.id, ...eventLogDetails_(source) });
   log_('bot_event_created', { calendarId: calendarId, botEventId: created.id, feature: feature, ...eventLogDetails_(source) });
 }
 
@@ -416,6 +420,7 @@ function removeBotEvent_(calendarId, source, feature, cache) {
   }
   delete cache[calendarId + ':' + key];
   forgetBotEvent_(calendarId, key);
+  logEventChange_('removed', calendarId, existing.id, { reason: feature, sourceEventId: sourceId, ...(typeof source === 'string' ? {} : eventLogDetails_(source)) });
   log_('bot_event_removed', {
     calendarId: calendarId,
     botEventId: existing.id,
@@ -492,6 +497,7 @@ function removeOrphanedBotEvents_(calendarId) {
     try {
       Calendar.Events.remove(calendarId, botEvent.id, { sendUpdates: 'none' });
       removed++;
+      logEventChange_('removed', calendarId, botEvent.id, { reason: 'orphaned_bot_event', sourceEventId: sourceId, feature: properties.calendarbotFeature || null });
       log_('orphaned_bot_event_removed', {
         calendarId: calendarId,
         botEventId: botEvent.id,
@@ -554,6 +560,7 @@ function calendarColorId_(value) {
 }
 function botKey_(sourceId, feature) { return sourceId + ':' + feature; }
 function eventLogDetails_(event) { return { sourceEventId: event.id, sourceEventTitle: event.summary || '(untitled)', sourceEventStart: event.start && (event.start.dateTime || event.start.date) || null }; }
+function logEventChange_(change, calendarId, eventId, details) { log_('event_change', { calendarId: calendarId, change: change, eventId: eventId, ...details }); }
 function syncPropertyKey_(calendarId) { return SYNC_PREFIX + Utilities.base64EncodeWebSafe(calendarId); }
 function isWithinReconciliationWindow_(event) {
   // Cancelled recurring instances can carry originalStartTime instead of start.
