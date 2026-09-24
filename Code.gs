@@ -421,6 +421,11 @@ function upsertBotEvent_(calendarId, source, feature, body, cache) {
   } };
   const existing = findBotEvent_(calendarId, key, cache, source);
   if (existing) {
+    if (botEventMatches_(existing, body)) {
+      rememberBotEvent_(calendarId, key, existing.id);
+      log_('bot_event_unchanged', { calendarId: calendarId, botEventId: existing.id, feature: feature, ...eventLogDetails_(source) });
+      return;
+    }
     try {
       Calendar.Events.patch(body, calendarId, existing.id);
       rememberBotEvent_(calendarId, key, existing.id);
@@ -510,6 +515,26 @@ function findBotEvent_(calendarId, key, cache, source) {
 function botEventCacheKey_(calendarId, key) { return BOT_EVENT_CACHE_PREFIX + Utilities.base64EncodeWebSafe(calendarId + ':' + key); }
 function rememberBotEvent_(calendarId, key, eventId) { CacheService.getUserCache().put(botEventCacheKey_(calendarId, key), eventId, 600); }
 function forgetBotEvent_(calendarId, key) { CacheService.getUserCache().remove(botEventCacheKey_(calendarId, key)); }
+
+/**
+ * Compares only the fields CalendarBot owns. Calendar may serialize identical
+ * instants with different ISO offsets, so start/end comparison uses timestamps.
+ */
+function botEventMatches_(existing, desired) {
+  const existingPrivate = existing.extendedProperties && existing.extendedProperties.private || {};
+  const desiredPrivate = desired.extendedProperties && desired.extendedProperties.private || {};
+  return existing.summary === desired.summary &&
+    existing.description === desired.description &&
+    sameEventTime_(existing.start, desired.start) &&
+    sameEventTime_(existing.end, desired.end) &&
+    (!desired.colorId || existing.colorId === desired.colorId) &&
+    Object.keys(desiredPrivate).every((key) => existingPrivate[key] === desiredPrivate[key]);
+}
+
+function sameEventTime_(left, right) {
+  return left && right && left.dateTime && right.dateTime &&
+    new Date(left.dateTime).getTime() === new Date(right.dateTime).getTime();
+}
 
 function botEventBody_(summary, description, start, end, timeZone, colorId) {
   const text = `${description}\n\n<i>${BOT_MARKER}</i>`;
