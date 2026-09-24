@@ -10,6 +10,15 @@ This is a Google-only, standalone port of CalendarBot's processing engine. It in
 
 It intentionally excludes cross-calendar sync, iCloud/CalDAV, Supabase caches, Slack status, and the separate managed-event scheduler.
 
+## How it works
+
+1. An installable Calendar trigger or the 15-minute safety-net trigger starts a reconciliation run.
+2. Calendar API incremental sync returns events changed since the previous successful run. A full bounded sync is used when no token exists or Calendar invalidates it.
+3. CalendarBot gathers a small time window around changed events, then recalculates travel, flight, and color decisions using the current surrounding schedule.
+4. Derived events are identified by private `calendarbotKey` properties and are created, updated, or removed to match those decisions.
+
+The trigger payload identifies only the calendar, not the changed event. The `calendar_change_received` logs identify every event returned by the corresponding sync batch.
+
 ## Color rules
 
 Set `colorRules` in `Config.gs` (or provide the same object to `saveConfiguration()`). Rules are evaluated in order and the first match wins.
@@ -75,6 +84,8 @@ colorRules: {
 4. Run `install()` once. It creates a Calendar-change trigger for each configured calendar and a 15-minute reconciliation trigger.
 
 Use `resetSync('you@example.com')` (with the configured calendar email) to force the next run to reconcile a calendar in full. For a complete repair that also removes tagged bot events whose deleted source event is absent from the full listing, run `fullReconcileCalendar('you@example.com')`. Use `uninstall()` to remove triggers without deleting any events.
+
+After modifying `DEFAULT_CONFIG`, run `saveDefaultConfiguration()` once. Code-only changes do not require it.
 
 Calendar processing is bounded to events starting from one day ago through the next 12 weeks. This keeps incremental-sync responses from causing historical calendar events to be reprocessed.
 

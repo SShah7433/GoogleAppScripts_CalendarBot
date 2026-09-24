@@ -24,14 +24,17 @@ const CALENDAR_COLOR_IDS = {
   tangerine: '6', peacock: '7', graphite: '8', blueberry: '9', basil: '10', tomato: '11',
 };
 
-/** Save a configuration object. Run from the Apps Script editor once per user. */
+/**
+ * Persists the configuration for the installing user. Trigger executions read
+ * this stored value, not DEFAULT_CONFIG, so run this after config edits.
+ */
 function saveConfiguration(config) {
   validateConfig_(config);
   PropertiesService.getUserProperties().setProperty(CONFIG_PROPERTY, JSON.stringify(config));
   log_('configuration_saved', { calendars: config.calendars.length });
 }
 
-/** Save the configuration defined in Config.gs. */
+/** Persists the DEFAULT_CONFIG object defined in Config.gs for the current user. */
 function saveDefaultConfiguration() {
   saveConfiguration(DEFAULT_CONFIG);
 }
@@ -66,14 +69,20 @@ function uninstall() {
   if (removed) log_('triggers_removed', { count: removed });
 }
 
-/** Installable Calendar trigger entry point. */
+/**
+ * Installable Calendar trigger entry point. Google supplies only the calendar
+ * ID, so syncChanges_ determines the individual events that changed.
+ */
 function onCalendarEventUpdated(e) {
   if (!e || !e.calendarId) return;
   log_('calendar_trigger_received', { calendarId: e.calendarId, triggerUid: e.triggerUid || null });
   processCalendar_(e.calendarId);
 }
 
-/** Clock-trigger entry point and a useful manual repair operation. */
+/**
+ * Periodic safety net for missed or coalesced Calendar notifications. This is
+ * also safe to run manually when a normal trigger run needs to be retried.
+ */
 function reconcileAllCalendars() {
   log_('reconciliation_started', { calendars: getConfig_().calendars.length });
   getConfig_().calendars.forEach(({ calendarId }) => processCalendar_(calendarId));
@@ -104,6 +113,11 @@ function fullReconcileCalendar(calendarId) {
   log_('full_reconciliation_completed', { calendarId: calendarId, orphanedBotEventsRemoved: removed, elapsedMs: Date.now() - startedAt });
 }
 
+/**
+ * Reconciles all CalendarBot behavior for one calendar change batch. A user
+ * lock serializes trigger and clock executions because they share sync tokens
+ * and can otherwise make duplicate create decisions.
+ */
 function processCalendar_(calendarId) {
   const lock = LockService.getUserLock();
   if (!lock.tryLock(5000)) {
@@ -201,6 +215,11 @@ function syncChanges_(calendarId) {
   return retained;
 }
 
+/**
+ * Recomputes travel buffers around changed timed events. The surrounding window
+ * is deliberately wider than a buffer so an unchanged neighboring event can be
+ * updated when the gap between events changes.
+ */
 function processTravel_(calendarId, changedTimed, travel, botCache) {
   // A two-hour context makes incremental changes safe: a new Zoom meeting can
   // shrink the buffer belonging to an unchanged physical event beside it.
@@ -234,6 +253,11 @@ function processTravel_(calendarId, changedTimed, travel, botCache) {
   });
 }
 
+/**
+ * Reconciles flight-related buffers. Adjacent flights in the local window are
+ * used to determine connections and layovers rather than trusting event order
+ * from Calendar's incremental-sync response.
+ */
 function processFlights_(calendarId, changed, flight, colorRules, botCache) {
   // Cancelled flights seed a neighboring-flight reconciliation as well.
   const changedFlights = changed.filter(isFlightEvent_);
@@ -279,6 +303,10 @@ function processFlights_(calendarId, changed, flight, colorRules, botCache) {
   });
 }
 
+/**
+ * Calculates the desired before/after buffers before non-travel conflicts are
+ * considered. Buffers between adjacent eligible events are merged downstream.
+ */
 function computeTravelDecisions_(events, bufferMinutes) {
   const decisions = {};
   events.forEach((event, index) => {
@@ -337,6 +365,7 @@ function mergeTravelDecisions_(decisions, events) {
   }
 }
 
+/** Applies the first matching configured color rule, respecting its priority. */
 function applyColorRules_(calendarId, event, colorConfig) {
   const external = colorConfig.externalAttendee || {};
   const useExternalFirst = external.enabled && external.priority === 'before_rules';
@@ -376,6 +405,11 @@ function applyExternalColor_(calendarId, event, config) {
   return false;
 }
 
+/**
+ * Creates or updates the one derived event identified by source ID and feature.
+ * Private properties are the durable identity; the user cache bridges Calendar
+ * API indexing delays immediately after a create.
+ */
 function upsertBotEvent_(calendarId, source, feature, body, cache) {
   const key = botKey_(source.id, feature);
   body.extendedProperties = { private: {
@@ -410,6 +444,7 @@ function removeFeatureSet_(calendarId, source, features, cache) {
   features.forEach((feature) => removeBotEvent_(calendarId, source, feature, cache));
 }
 
+/** Removes the derived event for a source/feature pair when it is no longer needed. */
 function removeBotEvent_(calendarId, source, feature, cache) {
   const sourceId = typeof source === 'string' ? source : source.id;
   const key = botKey_(sourceId, feature);
@@ -429,6 +464,11 @@ function removeBotEvent_(calendarId, source, feature, cache) {
   });
 }
 
+/**
+ * Locates a derived event without creating it. Lookup order favors the current
+ * run cache, then the short-lived ID cache, then Calendar's property filter.
+ * Invited-event copies that evade that filter fall back to a bounded local scan.
+ */
 function findBotEvent_(calendarId, key, cache, source) {
   const cacheKey = calendarId + ':' + key;
   if (Object.prototype.hasOwnProperty.call(cache, cacheKey)) return cache[cacheKey];
@@ -479,6 +519,10 @@ function botEventBody_(summary, description, start, end, timeZone, colorId) {
   return body;
 }
 
+/**
+ * Removes tagged events whose source is absent from a full reconciliation
+ * window. Marker-only legacy events are retained because ownership is unknown.
+ */
 function removeOrphanedBotEvents_(calendarId) {
   const now = Date.now();
   // Extra time on either side accounts for travel and boarding buffers.
@@ -514,12 +558,14 @@ function removeOrphanedBotEvents_(calendarId) {
   return removed;
 }
 
+/** Lists single-event instances in the smallest window surrounding seed events. */
 function listWindow_(calendarId, events, hours) {
   const times = events.flatMap((event) => [new Date(event.start.dateTime).getTime(), new Date((event.end && event.end.dateTime) || event.start.dateTime).getTime()]);
   if (!times.length) return [];
   return listRange_(calendarId, new Date(Math.min.apply(null, times) - hours * 3600000).toISOString(), new Date(Math.max.apply(null, times) + hours * 3600000).toISOString());
 }
 
+/** Lists all pages in an ISO-8601 range, expanding recurring events into instances. */
 function listRange_(calendarId, timeMin, timeMax) {
   const items = [];
   let pageToken;
@@ -551,6 +597,7 @@ function shrinkAfter_(start, end, sourceId, events) { let earliest = new Date(en
 function compareStart_(a, b) { return new Date(a.start.dateTime).getTime() - new Date(b.start.dateTime).getTime(); }
 function addMinutes_(iso, minutes) { return new Date(new Date(iso).getTime() + minutes * 60000).toISOString(); }
 function minutesBetween_(start, end) { return (new Date(end).getTime() - new Date(start).getTime()) / 60000; }
+/** Resolves a readable palette name or legacy numeric ID to Calendar API colorId. */
 function calendarColorId_(value) {
   if (value === undefined || value === null || value === '') return null;
   const color = String(value).trim().toLowerCase();
