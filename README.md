@@ -83,7 +83,7 @@ colorRules: {
 3. Edit `DEFAULT_CONFIG` in `Config.gs`, especially `calendars`. Use the calendar owner's email for both fields; Calendar update events identify the calendar by that email, so do not use the Calendar API alias `primary` here. Run `saveDefaultConfiguration()` once from the editor and approve scopes. Keep `Config.gs` when replacing `Code.gs` with a later engine update.
 4. Run `install()` once. It creates a Calendar-change trigger for each configured calendar and a 15-minute reconciliation trigger.
 
-Use `resetSync('you@example.com')` (with the configured calendar email) to force the next run to reconcile a calendar in full. For a complete repair that also removes tagged bot events whose deleted source event is absent from the full listing, run `fullReconcileCalendar('you@example.com')`. Use `uninstall()` to remove triggers without deleting any events.
+Use `resetSync('you@example.com')` (with the configured calendar email) to force the next run to reconcile a calendar in full. For a complete repair that also removes tagged bot events whose deleted source event is absent from the full listing, run `fullReconcileConfiguredCalendars()` from the Apps Script editor. It reads the configured calendar IDs and repairs each one. Use `uninstall()` to remove triggers without deleting any events.
 
 After modifying `DEFAULT_CONFIG`, run `saveDefaultConfiguration()` once. Code-only changes do not require it.
 

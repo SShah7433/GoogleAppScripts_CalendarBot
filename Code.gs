@@ -114,6 +114,14 @@ function fullReconcileCalendar(calendarId) {
 }
 
 /**
+ * Manually runs a complete repair for every calendar in the saved configuration.
+ * This is intended as a no-argument Apps Script editor entry point.
+ */
+function fullReconcileConfiguredCalendars() {
+  getConfig_().calendars.forEach(({ calendarId }) => fullReconcileCalendar(calendarId));
+}
+
+/**
  * Reconciles all CalendarBot behavior for one calendar change batch. A user
  * lock serializes trigger and clock executions because they share sync tokens
  * and can otherwise make duplicate create decisions.
