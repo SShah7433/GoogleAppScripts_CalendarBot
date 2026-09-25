@@ -60,6 +60,17 @@ colorRules: {
 
 `matchField` accepts `title` or `description`; `matchType` accepts `contains`, `exact`, or `starts_with`. Set any `colorId` field to one of: `lavender`, `sage`, `grape`, `flamingo`, `banana`, `tangerine`, `peacock`, `graphite`, `blueberry`, `basil`, or `tomato`. Numeric IDs `1` through `11` remain supported.
 
+## Flight event color
+
+Set `flightHandling.flightColorId` to color detected source flight events in addition to their derived buffers. The value takes precedence over generic `colorRules` for flight events. Leave it unset or set it to `null` to preserve each flight event's existing color.
+
+```js
+flightHandling: {
+  // Other flight settings...
+  flightColorId: 'peacock',
+},
+```
+
 A minimal deep-work rule is:
 
 ```js

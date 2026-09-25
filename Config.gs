@@ -33,6 +33,8 @@ const DEFAULT_CONFIG = {
     travelFromColorId: 'graphite',
     boardingColorId: 'banana',
     layoverColorId: 'grape',
+    // Optional: color the original flight event. Omit or set to null to leave it unchanged.
+    flightColorId: null,
   },
   colorRules: {
     enabled: false,

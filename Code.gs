@@ -270,6 +270,7 @@ function processFlights_(calendarId, changed, flight, colorRules, botCache) {
   // Cancelled flights seed a neighboring-flight reconciliation as well.
   const changedFlights = changed.filter(isFlightEvent_);
   if (!changedFlights.length) return;
+  const flightColorId = calendarColorId_(flight.flightColorId);
   // ±8h mirrors the existing service's layover lookup window.
   const flights = listWindow_(calendarId, changedFlights, 8).filter((event) => !isBotEvent_(event) && isFlightEvent_(event)).sort(compareStart_);
   log_('flight_reconciliation_started', { calendarId: calendarId, changedFlights: changedFlights.length, contextualFlights: flights.length });
@@ -308,6 +309,11 @@ function processFlights_(calendarId, changed, flight, colorRules, botCache) {
     }
 
     if (colorRules.enabled) applyColorRules_(calendarId, event, colorRules);
+    if (flightColorId && event.colorId !== flightColorId) {
+      Calendar.Events.patch({ colorId: flightColorId }, calendarId, event.id);
+      logEventChange_('modified', calendarId, event.id, { reason: 'flight_color', colorId: flightColorId, ...eventLogDetails_(event) });
+      log_('flight_color_applied', { calendarId: calendarId, colorId: flightColorId, ...eventLogDetails_(event) });
+    }
   });
 }
 
@@ -662,7 +668,7 @@ function validateConfig_(config) {
   const colorRules = config.colorRules || {};
   [
     config.travelTime && config.travelTime.colorId,
-    flight.travelToColorId, flight.travelFromColorId, flight.boardingColorId, flight.layoverColorId,
+    flight.travelToColorId, flight.travelFromColorId, flight.boardingColorId, flight.layoverColorId, flight.flightColorId,
     colorRules.externalAttendee && colorRules.externalAttendee.colorId,
     ...(colorRules.rules || []).map((rule) => rule.colorId),
   ].forEach(calendarColorId_);
