@@ -526,7 +526,11 @@ function findBotEvent_(calendarId, key, cache, source) {
   return cache[cacheKey];
 }
 
-function botEventCacheKey_(calendarId, key) { return BOT_EVENT_CACHE_PREFIX + Utilities.base64EncodeWebSafe(calendarId + ':' + key); }
+/** CacheService keys are limited to 250 bytes; event IDs are not. */
+function botEventCacheKey_(calendarId, key) {
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, calendarId + ':' + key);
+  return BOT_EVENT_CACHE_PREFIX + Utilities.base64EncodeWebSafe(digest);
+}
 function rememberBotEvent_(calendarId, key, eventId) { CacheService.getUserCache().put(botEventCacheKey_(calendarId, key), eventId, 600); }
 function forgetBotEvent_(calendarId, key) { CacheService.getUserCache().remove(botEventCacheKey_(calendarId, key)); }
 
