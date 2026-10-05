@@ -169,10 +169,10 @@ function processCalendar_(calendarId) {
     // neighboring, otherwise unchanged buffer decision.
     const changedTimed = changed.filter((event) => event.start && event.start.dateTime && !isBotEvent_(event));
     if (config.travelTime.enabled && changedTimed.length) {
-      processTravel_(calendarId, changedTimed, config.travelTime, botCache);
+      processTravel_(calendarId, changedTimed, config.travelTime, config.flightHandling, botCache);
     }
     if (config.flightHandling.enabled) {
-      processFlights_(calendarId, changed, config.flightHandling, config.colorRules, botCache);
+      processFlights_(calendarId, changed, config.flightHandling, config.travelTime, config.colorRules, botCache);
     }
     log_('processing_completed', { calendarId: calendarId, changedEvents: changed.length, elapsedMs: Date.now() - startedAt });
   } catch (error) {
@@ -228,14 +228,16 @@ function syncChanges_(calendarId) {
  * is deliberately wider than a buffer so an unchanged neighboring event can be
  * updated when the gap between events changes.
  */
-function processTravel_(calendarId, changedTimed, travel, botCache) {
+function processTravel_(calendarId, changedTimed, travel, flight, botCache) {
   // A two-hour context makes incremental changes safe: a new Zoom meeting can
   // shrink the buffer belonging to an unchanged physical event beside it.
-  const context = listWindow_(calendarId, changedTimed, 2).filter((event) => !isBotEvent_(event));
+  const airportBufferMinutes = flight && flight.enabled ? Math.max((flight.travelMinutes || 0) + (flight.boardingMinutes || 0), flight.travelFromMinutes || 0) : 0;
+  const context = listWindow_(calendarId, changedTimed, Math.max(2, (airportBufferMinutes + travel.bufferMinutes) / 60)).filter((event) => !isBotEvent_(event));
   const qualifying = context.filter(isTravelEligible_).sort(compareStart_);
   const allTimed = context.filter((event) => event.start && event.start.dateTime && isAcceptedOrOwned_(event)).sort(compareStart_);
   const decisions = computeTravelDecisions_(qualifying, travel.bufferMinutes);
-  shrinkTravelAgainstConflicts_(decisions, qualifying, allTimed);
+  // Airport buffers are protected intervals: regular travel yields to them.
+  shrinkTravelAgainstConflicts_(decisions, qualifying, allTimed.concat(airportTravelIntervals_(context, flight, travel)));
   mergeTravelDecisions_(decisions, qualifying);
   log_('travel_reconciliation_started', { calendarId: calendarId, changedSeeds: changedTimed.length, qualifyingEvents: qualifying.length });
 
@@ -266,14 +268,16 @@ function processTravel_(calendarId, changedTimed, travel, botCache) {
  * used to determine connections and layovers rather than trusting event order
  * from Calendar's incremental-sync response.
  */
-function processFlights_(calendarId, changed, flight, colorRules, botCache) {
-  // Cancelled flights seed a neighboring-flight reconciliation as well.
-  const changedFlights = changed.filter(isFlightEvent_);
-  if (!changedFlights.length) return;
+function processFlights_(calendarId, changed, flight, travel, colorRules, botCache) {
+  // A nearby physical meeting can extend a shared airport buffer. Cancelled
+  // flights remain valid seeds even though they are no longer travel eligible.
+  const changedTimed = changed.filter((event) => !isBotEvent_(event) && event.start && event.start.dateTime && (isFlightEvent_(event) || hasPhysicalAddress_(event.location)));
+  if (!changedTimed.length) return;
   const flightColorId = calendarColorId_(flight.flightColorId);
   // ±8h mirrors the existing service's layover lookup window.
-  const flights = listWindow_(calendarId, changedFlights, 8).filter((event) => !isBotEvent_(event) && isFlightEvent_(event)).sort(compareStart_);
-  log_('flight_reconciliation_started', { calendarId: calendarId, changedFlights: changedFlights.length, contextualFlights: flights.length });
+  const flights = listWindow_(calendarId, changedTimed, 8).filter((event) => !isBotEvent_(event) && isFlightEvent_(event)).sort(compareStart_);
+  if (!flights.length) return;
+  log_('flight_reconciliation_started', { calendarId: calendarId, changedSeeds: changedTimed.length, contextualFlights: flights.length });
   flights.forEach((event, index) => {
     const prior = flights[index - 1];
     const next = flights[index + 1];
@@ -284,7 +288,8 @@ function processFlights_(calendarId, changed, flight, colorRules, botCache) {
 
     if (flight.travelToEnabled && !priorIsConnection) {
       const travelStart = shrinkBefore_(addMinutes_(boardingStart, -flight.travelMinutes), boardingStart, event.id, allTimed);
-      if (travelStart) upsertBotEvent_(calendarId, event, 'flight_travel', botEventBody_(flight.travelToName, `Travel to airport for: ${event.summary || 'flight'}`, travelStart, boardingStart, event.start.timeZone, flight.travelToColorId), botCache);
+      const mergedStart = mergeAirportTravelStart_(travelStart, event.id, allTimed, travel);
+      if (mergedStart) upsertBotEvent_(calendarId, event, 'flight_travel', botEventBody_(flight.travelToName, `Travel to airport for: ${event.summary || 'flight'}`, mergedStart, boardingStart, event.start.timeZone, flight.travelToColorId), botCache);
       else removeBotEvent_(calendarId, event, 'flight_travel', botCache);
     } else {
       removeBotEvent_(calendarId, event, 'flight_travel', botCache);
@@ -302,7 +307,8 @@ function processFlights_(calendarId, changed, flight, colorRules, botCache) {
 
     if (flight.travelFromEnabled && !nextIsConnection && event.end && event.end.dateTime) {
       const travelEnd = shrinkAfter_(event.end.dateTime, addMinutes_(event.end.dateTime, flight.travelFromMinutes), event.id, allTimed);
-      if (travelEnd) upsertBotEvent_(calendarId, event, 'flight_travel_from', botEventBody_(flight.travelFromName, `Travel from airport for: ${event.summary || 'flight'}`, event.end.dateTime, travelEnd, event.end.timeZone || event.start.timeZone, flight.travelFromColorId), botCache);
+      const mergedEnd = mergeAirportTravelEnd_(travelEnd, event.id, allTimed, travel);
+      if (mergedEnd) upsertBotEvent_(calendarId, event, 'flight_travel_from', botEventBody_(flight.travelFromName, `Travel from airport for: ${event.summary || 'flight'}`, event.end.dateTime, mergedEnd, event.end.timeZone || event.start.timeZone, flight.travelFromColorId), botCache);
       else removeBotEvent_(calendarId, event, 'flight_travel_from', botCache);
     } else {
       removeBotEvent_(calendarId, event, 'flight_travel_from', botCache);
@@ -372,11 +378,59 @@ function mergeTravelDecisions_(decisions, events) {
   for (let i = 0; i < events.length - 1; i++) {
     const current = decisions[events[i].id];
     const next = decisions[events[i + 1].id];
-    if (current.returnEnd && next.travelStart && new Date(current.returnEnd) > new Date(next.travelStart)) {
+    if (current.returnEnd && next.travelStart && new Date(current.returnEnd) >= new Date(next.travelStart)) {
       next.travelStart = events[i].end.dateTime;
       current.returnEnd = null;
     }
   }
+}
+
+/** Returns airport travel intervals after shrinking them against real events. */
+function airportTravelIntervals_(events, flight, travel) {
+  if (!flight || !flight.enabled) return [];
+  const flights = events.filter(isFlightEvent_).sort(compareStart_);
+  const allTimed = events.filter((event) => event.start && event.start.dateTime);
+  const intervals = [];
+  flights.forEach((event, index) => {
+    const priorIsConnection = isLayover_(flights[index - 1], event, flight.layoverBufferMinutes);
+    const nextIsConnection = isLayover_(event, flights[index + 1], flight.layoverBufferMinutes);
+    const boardingStart = addMinutes_(event.start.dateTime, -flight.boardingMinutes);
+    if (flight.travelToEnabled && !priorIsConnection) {
+      const start = shrinkBefore_(addMinutes_(boardingStart, -flight.travelMinutes), boardingStart, event.id, allTimed);
+      const mergedStart = mergeAirportTravelStart_(start, event.id, allTimed, travel);
+      if (mergedStart) intervals.push({ id: `airport-to:${event.id}`, start: { dateTime: mergedStart }, end: { dateTime: boardingStart } });
+    }
+    if (flight.travelFromEnabled && !nextIsConnection && event.end && event.end.dateTime) {
+      const end = shrinkAfter_(event.end.dateTime, addMinutes_(event.end.dateTime, flight.travelFromMinutes), event.id, allTimed);
+      const mergedEnd = mergeAirportTravelEnd_(end, event.id, allTimed, travel);
+      if (mergedEnd) intervals.push({ id: `airport-from:${event.id}`, start: { dateTime: event.end.dateTime }, end: { dateTime: mergedEnd } });
+    }
+  });
+  return intervals;
+}
+
+function mergeAirportTravelStart_(start, sourceId, events, travel) {
+  if (!start || !travel || !travel.enabled) return start;
+  const startMs = new Date(start).getTime();
+  let latestEnd = null;
+  events.forEach((event) => {
+    if (event.id === sourceId || !isTravelEligible_(event) || !event.end || !event.end.dateTime) return;
+    const endMs = new Date(event.end.dateTime).getTime();
+    if (endMs <= startMs && endMs + travel.bufferMinutes * 60000 >= startMs && (!latestEnd || endMs > latestEnd)) latestEnd = endMs;
+  });
+  return latestEnd ? new Date(latestEnd).toISOString() : start;
+}
+
+function mergeAirportTravelEnd_(end, sourceId, events, travel) {
+  if (!end || !travel || !travel.enabled) return end;
+  const endMs = new Date(end).getTime();
+  let earliestStart = null;
+  events.forEach((event) => {
+    if (event.id === sourceId || !isTravelEligible_(event)) return;
+    const startMs = new Date(event.start.dateTime).getTime();
+    if (startMs >= endMs && startMs - travel.bufferMinutes * 60000 <= endMs && (!earliestStart || startMs < earliestStart)) earliestStart = startMs;
+  });
+  return earliestStart ? new Date(earliestStart).toISOString() : end;
 }
 
 /** Applies the first matching configured color rule, respecting its priority. */
