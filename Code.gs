@@ -246,12 +246,12 @@ function processTravel_(calendarId, changedTimed, travel, flight, botCache) {
   qualifying.forEach((event) => {
     const decision = decisions[event.id];
     if (decision.travelStart) {
-      upsertBotEvent_(calendarId, event, 'travel_time', botEventBody_(travel.eventName, `Travel to: ${event.summary || 'event'}`, decision.travelStart, event.start.dateTime, event.start.timeZone, travel.colorId), botCache);
+      upsertBotEvent_(calendarId, event, 'travel_time', botEventBody_(travel.eventName, `Travel to: ${event.summary || 'event'}`, decision.travelStart, event.start.dateTime, event.start.timeZone, travel), botCache);
     } else {
       removeBotEvent_(calendarId, event, 'travel_time', botCache);
     }
     if (decision.returnEnd) {
-      upsertBotEvent_(calendarId, event, 'travel_time_return', botEventBody_(travel.eventName, `Travel from: ${event.summary || 'event'}`, event.end.dateTime, decision.returnEnd, event.end.timeZone || event.start.timeZone, travel.colorId), botCache);
+      upsertBotEvent_(calendarId, event, 'travel_time_return', botEventBody_(travel.eventName, `Travel from: ${event.summary || 'event'}`, event.end.dateTime, decision.returnEnd, event.end.timeZone || event.start.timeZone, travel), botCache);
     } else {
       removeBotEvent_(calendarId, event, 'travel_time_return', botCache);
     }
@@ -273,7 +273,6 @@ function processFlights_(calendarId, changed, flight, travel, colorRules, botCac
   // flights remain valid seeds even though they are no longer travel eligible.
   const changedTimed = changed.filter((event) => !isBotEvent_(event) && event.start && event.start.dateTime && (isFlightEvent_(event) || hasPhysicalAddress_(event.location)));
   if (!changedTimed.length) return;
-  const flightColorId = calendarColorId_(flight.flightColorId);
   // ±8h mirrors the existing service's layover lookup window.
   const flights = listWindow_(calendarId, changedTimed, 8).filter((event) => !isBotEvent_(event) && isFlightEvent_(event)).sort(compareStart_);
   if (!flights.length) return;
@@ -289,18 +288,18 @@ function processFlights_(calendarId, changed, flight, travel, colorRules, botCac
     if (flight.travelToEnabled && !priorIsConnection) {
       const travelStart = shrinkBefore_(addMinutes_(boardingStart, -flight.travelMinutes), boardingStart, event.id, allTimed);
       const mergedStart = mergeAirportTravelStart_(travelStart, event.id, allTimed, travel);
-      if (mergedStart) upsertBotEvent_(calendarId, event, 'flight_travel', botEventBody_(flight.travelToName, `Travel to airport for: ${event.summary || 'flight'}`, mergedStart, boardingStart, event.start.timeZone, flight.travelToColorId), botCache);
+      if (mergedStart) upsertBotEvent_(calendarId, event, 'flight_travel', botEventBody_(flight.travelToName, `Travel to airport for: ${event.summary || 'flight'}`, mergedStart, boardingStart, event.start.timeZone, eventStyle_(flight, 'travelTo')), botCache);
       else removeBotEvent_(calendarId, event, 'flight_travel', botCache);
     } else {
       removeBotEvent_(calendarId, event, 'flight_travel', botCache);
     }
 
-    if (flight.boardingEnabled) upsertBotEvent_(calendarId, event, 'flight_boarding', botEventBody_(flight.boardingName, `Boarding time for: ${event.summary || 'flight'}`, boardingStart, event.start.dateTime, event.start.timeZone, flight.boardingColorId), botCache);
+    if (flight.boardingEnabled) upsertBotEvent_(calendarId, event, 'flight_boarding', botEventBody_(flight.boardingName, `Boarding time for: ${event.summary || 'flight'}`, boardingStart, event.start.dateTime, event.start.timeZone, eventStyle_(flight, 'boarding')), botCache);
     else removeBotEvent_(calendarId, event, 'flight_boarding', botCache);
 
     if (flight.layoverEnabled && nextIsConnection) {
       const nextBoarding = addMinutes_(next.start.dateTime, -flight.boardingMinutes);
-      upsertBotEvent_(calendarId, event, 'flight_layover', botEventBody_(flight.layoverName, `Layover between: ${event.summary || 'flight'} and ${next.summary || 'flight'}`, event.end.dateTime, nextBoarding, event.start.timeZone, flight.layoverColorId), botCache);
+      upsertBotEvent_(calendarId, event, 'flight_layover', botEventBody_(flight.layoverName, `Layover between: ${event.summary || 'flight'} and ${next.summary || 'flight'}`, event.end.dateTime, nextBoarding, event.start.timeZone, eventStyle_(flight, 'layover')), botCache);
     } else {
       removeBotEvent_(calendarId, event, 'flight_layover', botCache);
     }
@@ -308,18 +307,14 @@ function processFlights_(calendarId, changed, flight, travel, colorRules, botCac
     if (flight.travelFromEnabled && !nextIsConnection && event.end && event.end.dateTime) {
       const travelEnd = shrinkAfter_(event.end.dateTime, addMinutes_(event.end.dateTime, flight.travelFromMinutes), event.id, allTimed);
       const mergedEnd = mergeAirportTravelEnd_(travelEnd, event.id, allTimed, travel);
-      if (mergedEnd) upsertBotEvent_(calendarId, event, 'flight_travel_from', botEventBody_(flight.travelFromName, `Travel from airport for: ${event.summary || 'flight'}`, event.end.dateTime, mergedEnd, event.end.timeZone || event.start.timeZone, flight.travelFromColorId), botCache);
+      if (mergedEnd) upsertBotEvent_(calendarId, event, 'flight_travel_from', botEventBody_(flight.travelFromName, `Travel from airport for: ${event.summary || 'flight'}`, event.end.dateTime, mergedEnd, event.end.timeZone || event.start.timeZone, eventStyle_(flight, 'travelFrom')), botCache);
       else removeBotEvent_(calendarId, event, 'flight_travel_from', botCache);
     } else {
       removeBotEvent_(calendarId, event, 'flight_travel_from', botCache);
     }
 
     if (colorRules.enabled) applyColorRules_(calendarId, event, colorRules);
-    if (flightColorId && event.colorId !== flightColorId) {
-      Calendar.Events.patch({ colorId: flightColorId }, calendarId, event.id);
-      logEventChange_('modified', calendarId, event.id, { reason: 'flight_color', colorId: flightColorId, ...eventLogDetails_(event) });
-      log_('flight_color_applied', { calendarId: calendarId, colorId: flightColorId, ...eventLogDetails_(event) });
-    }
+    applyEventStyle_(calendarId, event, eventStyle_(flight, 'flight'), 'flight_color');
   });
 }
 
@@ -445,12 +440,7 @@ function applyColorRules_(calendarId, event, colorConfig) {
     const pattern = normalize(rule.pattern || '');
     const matched = rule.matchType === 'exact' ? candidate === pattern : rule.matchType === 'starts_with' ? candidate.startsWith(pattern) : candidate.includes(pattern);
     if (matched) {
-      const colorId = calendarColorId_(rule.colorId);
-      if (colorId && event.colorId !== colorId) {
-        Calendar.Events.patch({ colorId: colorId }, calendarId, event.id);
-        logEventChange_('modified', calendarId, event.id, { reason: 'color_rule', colorId: colorId, ...eventLogDetails_(event) });
-        log_('color_rule_applied', { calendarId: calendarId, colorId: colorId, matchField: rule.matchField, matchType: rule.matchType, ...eventLogDetails_(event) });
-      }
+      applyEventStyle_(calendarId, event, rule, 'color_rule', { matchField: rule.matchField, matchType: rule.matchType });
       return;
     }
   }
@@ -463,14 +453,7 @@ function applyExternalColor_(calendarId, event, config) {
     const domain = attendee.email && attendee.email.split('@')[1];
     return !attendee.self && domain && !internal.has(domain.toLowerCase());
   });
-  const colorId = calendarColorId_(config.colorId);
-  if (externalAttendee && colorId && event.colorId !== colorId) {
-    Calendar.Events.patch({ colorId: colorId }, calendarId, event.id);
-    logEventChange_('modified', calendarId, event.id, { reason: 'external_attendee_color', colorId: colorId, ...eventLogDetails_(event) });
-    log_('external_attendee_color_applied', { calendarId: calendarId, colorId: colorId, ...eventLogDetails_(event) });
-    return true;
-  }
-  return false;
+  return externalAttendee && applyEventStyle_(calendarId, event, config, 'external_attendee_color');
 }
 
 /**
@@ -495,7 +478,7 @@ function upsertBotEvent_(calendarId, source, feature, body, cache) {
       return;
     }
     try {
-      Calendar.Events.patch(body, calendarId, existing.id);
+      Calendar.Events.patch(body, calendarId, existing.id, eventWriteOptions_(body));
       rememberBotEvent_(calendarId, key, existing.id);
       logEventChange_('modified', calendarId, existing.id, { reason: feature, sourceEventId: source.id, ...eventLogDetails_(source) });
       log_('bot_event_updated', { calendarId: calendarId, botEventId: existing.id, feature: feature, ...eventLogDetails_(source) });
@@ -504,7 +487,7 @@ function upsertBotEvent_(calendarId, source, feature, body, cache) {
       if (!/404|410/.test(String(error))) throw error;
     }
   }
-  const created = Calendar.Events.insert(body, calendarId, { sendUpdates: 'none' });
+  const created = Calendar.Events.insert(body, calendarId, { sendUpdates: 'none', ...eventWriteOptions_(body) });
   cache[calendarId + ':' + key] = created;
   // Extended-property filtering can lag behind event writes. Retain the ID long
   // enough for the write-triggered reconciliation pass to retrieve it directly.
@@ -600,6 +583,7 @@ function botEventMatches_(existing, desired) {
     sameEventTime_(existing.start, desired.start) &&
     sameEventTime_(existing.end, desired.end) &&
     (!desired.colorId || existing.colorId === desired.colorId) &&
+    (!desired.eventLabelId || existing.eventLabelId === desired.eventLabelId) &&
     Object.keys(desiredPrivate).every((key) => existingPrivate[key] === desiredPrivate[key]);
 }
 
@@ -608,11 +592,10 @@ function sameEventTime_(left, right) {
     new Date(left.dateTime).getTime() === new Date(right.dateTime).getTime();
 }
 
-function botEventBody_(summary, description, start, end, timeZone, colorId) {
+function botEventBody_(summary, description, start, end, timeZone, style) {
   const text = `${description}\n\n<i>${BOT_MARKER}</i>`;
   const body = { summary: summary, description: text, start: { dateTime: start, timeZone: timeZone }, end: { dateTime: end, timeZone: timeZone } };
-  const resolvedColorId = calendarColorId_(colorId);
-  if (resolvedColorId) body.colorId = resolvedColorId;
+  Object.assign(body, eventAppearance_(style));
   return body;
 }
 
@@ -702,6 +685,60 @@ function calendarColorId_(value) {
   if (CALENDAR_COLOR_IDS[color]) return CALENDAR_COLOR_IDS[color];
   throw new Error(`Unknown calendar color: ${value}. Use a palette name such as "peacock" or an ID from 1 through 11.`);
 }
+
+/**
+ * Resolves the legacy palette or the newer Calendar event label. Labels and
+ * legacy colors are mutually exclusive because eventLabelId supersedes colorId.
+ */
+function eventAppearance_(style) {
+  if (style === undefined || style === null || style === '') return {};
+  const config = typeof style === 'object' ? style : { colorId: style };
+  const eventLabelId = config.eventLabelId && String(config.eventLabelId).trim();
+  const colorId = calendarColorId_(config.colorId);
+  if (eventLabelId && colorId) throw new Error('Specify either colorId or eventLabelId, not both.');
+  return eventLabelId ? { eventLabelId: eventLabelId } : colorId ? { colorId: colorId } : {};
+}
+
+/** Returns the style fields for a flight feature such as "boarding". */
+function eventStyle_(config, prefix) {
+  return { colorId: config[prefix + 'ColorId'], eventLabelId: config[prefix + 'EventLabelId'] };
+}
+
+/** Event labels require the Calendar API's label-aware write mode. */
+function eventWriteOptions_(body) { return body.eventLabelId ? { eventLabelVersion: 1 } : {}; }
+
+/**
+ * Returns this calendar's custom labels and logs their IDs for configuration.
+ * Run from the Apps Script editor: listEventLabels('you@example.com').
+ */
+function listEventLabels(calendarId) {
+  const calendar = Calendar.Calendars.get(calendarId);
+  const labels = ((calendar.labelProperties || {}).eventLabels || []).map((label) => ({
+    id: label.id,
+    name: label.name || '',
+    backgroundColor: label.backgroundColor,
+  }));
+  console.log(JSON.stringify({ calendarId: calendarId, eventLabels: labels }));
+  return labels;
+}
+
+/** Lists labels for the first calendar in the saved CalendarBot configuration. */
+function listDefaultCalendarEventLabels() {
+  const config = getConfig_();
+  return listEventLabels(config.calendars[0].calendarId);
+}
+
+/** Applies a configured legacy color or new event label, returning whether changed. */
+function applyEventStyle_(calendarId, event, style, reason, details) {
+  const appearance = eventAppearance_(style);
+  const field = appearance.eventLabelId ? 'eventLabelId' : appearance.colorId ? 'colorId' : null;
+  if (!field || event[field] === appearance[field]) return false;
+  Calendar.Events.patch(appearance, calendarId, event.id, eventWriteOptions_(appearance));
+  const logDetails = { reason: reason, ...appearance, ...(details || {}), ...eventLogDetails_(event) };
+  logEventChange_('modified', calendarId, event.id, logDetails);
+  log_(reason + '_applied', { calendarId: calendarId, ...logDetails });
+  return true;
+}
 function botKey_(sourceId, feature) { return sourceId + ':' + feature; }
 function eventLogDetails_(event) { return { sourceEventId: event.id, sourceEventTitle: event.summary || '(untitled)', sourceEventStart: event.start && (event.start.dateTime || event.start.date) || null }; }
 function logEventChange_(change, calendarId, eventId, details) { log_('event_change', { calendarId: calendarId, change: change, eventId: eventId, ...details }); }
@@ -725,9 +762,9 @@ function validateConfig_(config) {
   const flight = config.flightHandling || {};
   const colorRules = config.colorRules || {};
   [
-    config.travelTime && config.travelTime.colorId,
-    flight.travelToColorId, flight.travelFromColorId, flight.boardingColorId, flight.layoverColorId, flight.flightColorId,
-    colorRules.externalAttendee && colorRules.externalAttendee.colorId,
-    ...(colorRules.rules || []).map((rule) => rule.colorId),
-  ].forEach(calendarColorId_);
+    config.travelTime,
+    eventStyle_(flight, 'travelTo'), eventStyle_(flight, 'travelFrom'), eventStyle_(flight, 'boarding'), eventStyle_(flight, 'layover'), eventStyle_(flight, 'flight'),
+    colorRules.externalAttendee,
+    ...(colorRules.rules || []),
+  ].forEach(eventAppearance_);
 }

@@ -60,9 +60,38 @@ colorRules: {
 
 `matchField` accepts `title` or `description`; `matchType` accepts `contains`, `exact`, or `starts_with`. Set any `colorId` field to one of: `lavender`, `sage`, `grape`, `flamingo`, `banana`, `tangerine`, `peacock`, `graphite`, `blueberry`, `basil`, or `tomato`. Numeric IDs `1` through `11` remain supported.
 
+### New Calendar event labels
+
+The newer Calendar colors are event labels. Use their API ID in `eventLabelId` instead of `colorId` (do not set both):
+
+```js
+{
+  matchField: 'title',
+  matchType: 'starts_with',
+  pattern: 'Client:',
+  eventLabelId: 'your-calendar-label-id',
+}
+```
+
+`eventLabelId` is supported by `travelTime`, each `colorRules.rules` item, `colorRules.externalAttendee`, and flight settings. For flight settings, use the feature-specific names: `travelToEventLabelId`, `travelFromEventLabelId`, `boardingEventLabelId`, `layoverEventLabelId`, and `flightEventLabelId`. CalendarBot automatically enables the Calendar API's label-aware write mode for these updates.
+
+To find the IDs, run this from the Apps Script editor and inspect the execution log:
+
+```js
+listEventLabels('you@example.com');
+```
+
+It returns and logs each label's `id`, `name`, and `backgroundColor`. Use the `id` value in `eventLabelId`.
+
+To use the first calendar in the saved CalendarBot configuration instead, run:
+
+```js
+listDefaultCalendarEventLabels();
+```
+
 ## Flight event color
 
-Set `flightHandling.flightColorId` to color detected source flight events in addition to their derived buffers. The value takes precedence over generic `colorRules` for flight events. Leave it unset or set it to `null` to preserve each flight event's existing color.
+Set `flightHandling.flightColorId` (or `flightEventLabelId` for a new Calendar label) to color detected source flight events in addition to their derived buffers. The value takes precedence over generic `colorRules` for flight events. Leave it unset or set it to `null` to preserve each flight event's existing color.
 
 ```js
 flightHandling: {
