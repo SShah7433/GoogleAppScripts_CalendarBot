@@ -436,9 +436,21 @@ function applyColorRules_(calendarId, event, colorConfig) {
   for (const rule of colorConfig.rules || []) {
     const text = rule.matchField === 'description' ? (event.description || '') : (event.summary || '');
     const normalize = (value) => rule.caseSensitive ? value.replace(/\uFE0F/g, '') : value.replace(/\uFE0F/g, '').toLowerCase();
-    const candidate = normalize(text);
-    const pattern = normalize(rule.pattern || '');
-    const matched = rule.matchType === 'exact' ? candidate === pattern : rule.matchType === 'starts_with' ? candidate.startsWith(pattern) : candidate.includes(pattern);
+    let matched;
+    if (rule.matchType === 'regex') {
+      try {
+        // Do not lowercase regex source: doing so changes escapes such as \D and \W.
+        const candidate = text.replace(/\uFE0F/g, '');
+        const pattern = String(rule.pattern || '').replace(/\uFE0F/g, '');
+        matched = new RegExp(pattern, rule.caseSensitive ? '' : 'i').test(candidate);
+      } catch (error) {
+        throw new Error(`Invalid regex color rule pattern "${rule.pattern}": ${error.message}`);
+      }
+    } else {
+      const candidate = normalize(text);
+      const pattern = normalize(rule.pattern || '');
+      matched = rule.matchType === 'exact' ? candidate === pattern : rule.matchType === 'starts_with' ? candidate.startsWith(pattern) : candidate.includes(pattern);
+    }
     if (matched) {
       applyEventStyle_(calendarId, event, rule, 'color_rule', { matchField: rule.matchField, matchType: rule.matchType });
       return;
@@ -767,4 +779,12 @@ function validateConfig_(config) {
     colorRules.externalAttendee,
     ...(colorRules.rules || []),
   ].forEach(eventAppearance_);
+  (colorRules.rules || []).forEach((rule) => {
+    if (rule.matchType !== 'regex') return;
+    try {
+      new RegExp(String(rule.pattern || '').replace(/\uFE0F/g, ''), rule.caseSensitive ? '' : 'i');
+    } catch (error) {
+      throw new Error(`Invalid regex color rule pattern "${rule.pattern}": ${error.message}`);
+    }
+  });
 }

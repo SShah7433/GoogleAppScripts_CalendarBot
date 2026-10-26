@@ -48,6 +48,13 @@ colorRules: {
       colorId: 'banana',
       caseSensitive: false,
     },
+    {
+      matchField: 'title',
+      matchType: 'regex',
+      pattern: '^Project (Alpha|Beta)\\b',
+      colorId: 'peacock',
+      caseSensitive: false,
+    },
   ],
   externalAttendee: {
     enabled: true,
@@ -58,7 +65,7 @@ colorRules: {
 },
 ```
 
-`matchField` accepts `title` or `description`; `matchType` accepts `contains`, `exact`, or `starts_with`. Set any `colorId` field to one of: `lavender`, `sage`, `grape`, `flamingo`, `banana`, `tangerine`, `peacock`, `graphite`, `blueberry`, `basil`, or `tomato`. Numeric IDs `1` through `11` remain supported.
+`matchField` accepts `title` or `description`; `matchType` accepts `contains`, `exact`, `starts_with`, or `regex`. Regex patterns use JavaScript regular-expression syntax (without `/.../` delimiters); `caseSensitive: false` applies the `i` flag. Invalid patterns produce a configuration error when saved. Set any `colorId` field to one of: `lavender`, `sage`, `grape`, `flamingo`, `banana`, `tangerine`, `peacock`, `graphite`, `blueberry`, `basil`, or `tomato`. Numeric IDs `1` through `11` remain supported.
 
 ### New Calendar event labels
 

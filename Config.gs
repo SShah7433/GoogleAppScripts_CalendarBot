@@ -46,7 +46,7 @@ const DEFAULT_CONFIG = {
   colorRules: {
     enabled: false,
     // First matching rule wins. matchField is "title" or "description";
-    // matchType is "contains", "exact", or "starts_with".
+    // matchType is "contains", "exact", "starts_with", or "regex".
     rules: [],
     // Each rule and externalAttendee can use eventLabelId instead of colorId.
     externalAttendee: {
