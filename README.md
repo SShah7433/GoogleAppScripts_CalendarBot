@@ -107,6 +107,10 @@ flightHandling: {
 },
 ```
 
+## Airport-travel conflicts
+
+Airport-travel buffers retain their full configured duration when they overlap existing calendar events. The conflicting event is never changed; both events remain visible on the calendar.
+
 A minimal deep-work rule is:
 
 ```js

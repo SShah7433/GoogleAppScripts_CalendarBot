@@ -286,7 +286,9 @@ function processFlights_(calendarId, changed, flight, travel, colorRules, botCac
     const allTimed = listWindow_(calendarId, [event], 4).filter((other) => !isBotEvent_(other) && other.start && other.start.dateTime);
 
     if (flight.travelToEnabled && !priorIsConnection) {
-      const travelStart = shrinkBefore_(addMinutes_(boardingStart, -flight.travelMinutes), boardingStart, event.id, allTimed);
+      // Airport buffers are reminders and intentionally remain at their full
+      // configured duration, even when they overlap an existing event.
+      const travelStart = addMinutes_(boardingStart, -flight.travelMinutes);
       const mergedStart = mergeAirportTravelStart_(travelStart, event.id, allTimed, travel);
       if (mergedStart) upsertBotEvent_(calendarId, event, 'flight_travel', botEventBody_(flight.travelToName, `Travel to airport for: ${event.summary || 'flight'}`, mergedStart, boardingStart, event.start.timeZone, eventStyle_(flight, 'travelTo')), botCache);
       else removeBotEvent_(calendarId, event, 'flight_travel', botCache);
@@ -305,7 +307,8 @@ function processFlights_(calendarId, changed, flight, travel, colorRules, botCac
     }
 
     if (flight.travelFromEnabled && !nextIsConnection && event.end && event.end.dateTime) {
-      const travelEnd = shrinkAfter_(event.end.dateTime, addMinutes_(event.end.dateTime, flight.travelFromMinutes), event.id, allTimed);
+      // See the corresponding travel-to buffer: conflicts do not shorten it.
+      const travelEnd = addMinutes_(event.end.dateTime, flight.travelFromMinutes);
       const mergedEnd = mergeAirportTravelEnd_(travelEnd, event.id, allTimed, travel);
       if (mergedEnd) upsertBotEvent_(calendarId, event, 'flight_travel_from', botEventBody_(flight.travelFromName, `Travel from airport for: ${event.summary || 'flight'}`, event.end.dateTime, mergedEnd, event.end.timeZone || event.start.timeZone, eventStyle_(flight, 'travelFrom')), botCache);
       else removeBotEvent_(calendarId, event, 'flight_travel_from', botCache);
@@ -380,7 +383,7 @@ function mergeTravelDecisions_(decisions, events) {
   }
 }
 
-/** Returns airport travel intervals after shrinking them against real events. */
+/** Returns airport travel intervals; airport buffers may overlap real events. */
 function airportTravelIntervals_(events, flight, travel) {
   if (!flight || !flight.enabled) return [];
   const flights = events.filter(isFlightEvent_).sort(compareStart_);
@@ -391,12 +394,12 @@ function airportTravelIntervals_(events, flight, travel) {
     const nextIsConnection = isLayover_(event, flights[index + 1], flight.layoverBufferMinutes);
     const boardingStart = addMinutes_(event.start.dateTime, -flight.boardingMinutes);
     if (flight.travelToEnabled && !priorIsConnection) {
-      const start = shrinkBefore_(addMinutes_(boardingStart, -flight.travelMinutes), boardingStart, event.id, allTimed);
+      const start = addMinutes_(boardingStart, -flight.travelMinutes);
       const mergedStart = mergeAirportTravelStart_(start, event.id, allTimed, travel);
       if (mergedStart) intervals.push({ id: `airport-to:${event.id}`, start: { dateTime: mergedStart }, end: { dateTime: boardingStart } });
     }
     if (flight.travelFromEnabled && !nextIsConnection && event.end && event.end.dateTime) {
-      const end = shrinkAfter_(event.end.dateTime, addMinutes_(event.end.dateTime, flight.travelFromMinutes), event.id, allTimed);
+      const end = addMinutes_(event.end.dateTime, flight.travelFromMinutes);
       const mergedEnd = mergeAirportTravelEnd_(end, event.id, allTimed, travel);
       if (mergedEnd) intervals.push({ id: `airport-from:${event.id}`, start: { dateTime: event.end.dateTime }, end: { dateTime: mergedEnd } });
     }
