@@ -21,7 +21,7 @@ The trigger payload identifies only the calendar, not the changed event. The `ca
 
 ## Travel override tag
 
-Add `#needs_travel` to an event's title or description to generate the normal configured travel-to and travel-from buffers even when its location does not look like a physical street address. The tag is case-insensitive. The event must still be timed and accepted (or owned by you); cancelled events are excluded.
+Add `#needs_travel` to an event's title or description to generate the normal configured travel-to and travel-from buffers even when its location does not look like a physical street address. The tag is case-insensitive and works in rich-text descriptions (including after links or line breaks). The event must still be timed and accepted (or owned by you); cancelled events are excluded.
 
 ## Color rules
 

@@ -684,7 +684,7 @@ function isTravelEligible_(event) {
 }
 function hasPhysicalAddress_(location) { return !!location && !/(zoom\.us|meet\.google\.com|teams\.microsoft\.com|webex)/i.test(location) && /\d+\s+\w/.test(location); }
 /** Explicitly opt an event into regular travel buffers without a street address. */
-function hasNeedsTravelTag_(event) { return /(^|\s)#needs_travel\b/i.test(`${event.summary || ''}\n${event.description || ''}`); }
+function hasNeedsTravelTag_(event) { return /(^|[^A-Za-z0-9_])#needs_travel\b/i.test(`${event.summary || ''}\n${event.description || ''}`); }
 function isAcceptedOrOwned_(event) { const self = (event.attendees || []).find((attendee) => attendee.self); return !self || self.responseStatus === 'accepted'; }
 function isFlightEvent_(event) { const title = event.summary || ''; const description = event.description || ''; return !isBotEvent_(event) && (description.includes('#flight') || title.startsWith('Flight:') || /^[✈️✈]/.test(title)); }
 function isBotEvent_(event) { return !!((event.extendedProperties && event.extendedProperties.private && event.extendedProperties.private.calendarbotKey) || (event.description || '').includes(BOT_MARKER)); }
