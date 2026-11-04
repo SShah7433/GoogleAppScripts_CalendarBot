@@ -3,7 +3,7 @@
 This is a Google-only, standalone port of CalendarBot's processing engine. It includes:
 
 - Calendar `EventUpdated` triggers and incremental Calendar API sync tokens
-- Travel-to and travel-from buffers for accepted events with a physical address
+- Travel-to and travel-from buffers for accepted events with a physical address or `#needs_travel` tag
 - Flight travel, boarding, layover, and arrival buffers
 - Rule-based and external-attendee event coloring
 - A 15-minute reconciliation trigger for missed/coalesced Calendar changes
@@ -18,6 +18,10 @@ It intentionally excludes cross-calendar sync, iCloud/CalDAV, Supabase caches, S
 4. Derived events are identified by private `calendarbotKey` properties and are created, updated, or removed to match those decisions.
 
 The trigger payload identifies only the calendar, not the changed event. The `calendar_change_received` logs identify every event returned by the corresponding sync batch.
+
+## Travel override tag
+
+Add `#needs_travel` to an event's title or description to generate the normal configured travel-to and travel-from buffers even when its location does not look like a physical street address. The tag is case-insensitive. The event must still be timed and accepted (or owned by you); cancelled events are excluded.
 
 ## Color rules
 
